@@ -111,6 +111,19 @@ process_msg(struct sc_receiver *receiver, struct sc_device_msg *msg) {
             sc_acksync_ack(receiver->acksync, msg->ack_clipboard.sequence);
             // No allocation to free in the msg
             break;
+        case DEVICE_MSG_TYPE_ROTATION_STATE: {
+            struct sc_device_rotation_event *state = malloc(sizeof(*state));
+            if (!state) {
+                LOG_OOM();
+                return;
+            }
+            state->rotation = msg->rotation_state.rotation;
+            state->frozen = msg->rotation_state.frozen;
+            if (!sc_push_event_with_data(SC_EVENT_ROTATION_STATE, state)) {
+                free(state);
+            }
+            break;
+        }
         case DEVICE_MSG_TYPE_UHID_OUTPUT:
             if (sc_get_log_level() <= SC_LOG_LEVEL_VERBOSE) {
                 char *hex = sc_str_to_hex_string(msg->uhid_output.data,

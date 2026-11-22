@@ -26,12 +26,15 @@ struct sc_rotation_sync_state {
     uint8_t current_sdl_rotation;
     enum sc_rotation_sync_status status;
     bool has_device_rotation;
+    bool device_rotation_frozen;
 };
 
 void sc_rotation_sync_init(struct sc_rotation_sync_state *state);
 enum sc_rotation_mode sc_rotation_sync_next_mode(enum sc_rotation_mode current);
 bool sc_rotation_sync_mode_to_rotation(enum sc_rotation_mode mode, uint8_t *rotation);
 bool sc_rotation_sync_update_device(struct sc_rotation_sync_state *state, uint8_t device_rotation);
+bool sc_rotation_sync_update_device_state(struct sc_rotation_sync_state *state,
+                                          uint8_t device_rotation, bool frozen);
 bool sc_rotation_sync_set_requested_mode(struct sc_rotation_sync_state *state, enum sc_rotation_mode mode);
 bool sc_rotation_sync_get_sdl_rotation(const struct sc_rotation_sync_state *state, uint8_t *rotation);
 const char *sc_rotation_mode_get_name(enum sc_rotation_mode mode);

@@ -30,6 +30,7 @@ public final class ControlMessage {
     public static final int TYPE_CAMERA_ZOOM_OUT = 20;
     public static final int TYPE_RESIZE_DISPLAY = 21;
     public static final int TYPE_SCAN_FILE = 22;
+    public static final int TYPE_SET_ROTATION_MODE = 23;
 
     public static final long SEQUENCE_INVALID = 0;
 
@@ -60,6 +61,7 @@ public final class ControlMessage {
     private int productId;
     private int width;
     private int height;
+    private int rotationMode;
 
     private ControlMessage() {
     }
@@ -188,11 +190,22 @@ public final class ControlMessage {
         return msg;
     }
 
+    public static ControlMessage createSetRotationMode(int mode) {
+        ControlMessage msg = new ControlMessage();
+        msg.type = TYPE_SET_ROTATION_MODE;
+        msg.rotationMode = mode;
+        return msg;
+    }
+
     public static ControlMessage createScanFile(String path) {
         ControlMessage msg = new ControlMessage();
         msg.type = TYPE_SCAN_FILE;
         msg.text = path;
         return msg;
+    }
+
+    public int getRotationMode() {
+        return rotationMode;
     }
 
     public int getType() {

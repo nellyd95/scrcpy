@@ -1273,7 +1273,15 @@ sc_screen_handle_shell_pointer(struct sc_screen *screen, int32_t x, int32_t y,
             if (hit == SC_SHELL_FULLSCREEN) {
                 sc_screen_toggle_fullscreen(screen);
             } else if (!screen->disconnected) {
-                sc_input_manager_press_shell_button(&screen->im, hit);
+                if (hit == SC_SHELL_ROTATION) {
+                    enum sc_rotation_mode mode = sc_rotation_sync_next_mode(
+                        screen->rotation_sync.requested_mode);
+                    sc_rotation_sync_set_requested_mode(&screen->rotation_sync,
+                                                        mode);
+                    sc_input_manager_request_rotation_mode(&screen->im, mode);
+                } else {
+                    sc_input_manager_press_shell_button(&screen->im, hit);
+                }
             }
         }
         if (!in_video || pressed != SC_SHELL_NONE) {
@@ -1338,6 +1346,19 @@ sc_screen_handle_shell_event(struct sc_screen *screen, const SDL_Event *event) {
 void
 sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event) {
     switch (event->type) {
+        case SC_EVENT_ROTATION_STATE: {
+            struct sc_device_rotation_event *state = event->user.data1;
+            if (state) {
+                sc_rotation_sync_update_device_state(&screen->rotation_sync,
+                                                    state->rotation,
+                                                    state->frozen);
+                free(state);
+                if (screen->window_shown && sc_screen_has_shell(screen)) {
+                    sc_screen_render(screen, false);
+                }
+            }
+            return;
+        }
         case SC_EVENT_OPEN_WINDOW: {
             struct sc_size *size = event->user.data1;
             assert(size);

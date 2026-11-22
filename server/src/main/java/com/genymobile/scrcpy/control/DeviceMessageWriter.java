@@ -39,6 +39,10 @@ public class DeviceMessageWriter {
                 dos.writeShort(data.length);
                 dos.write(data);
                 break;
+            case DeviceMessage.TYPE_ROTATION_STATE:
+                dos.writeByte(msg.getRotation());
+                dos.writeBoolean(msg.isRotationFrozen());
+                break;
             default:
                 throw new ControlProtocolException("Unknown event type: " + type);
         }

@@ -83,6 +83,18 @@ static void test_deserialize_uhid_output(void) {
     sc_device_msg_destroy(&msg);
 }
 
+static void test_deserialize_rotation_state(void) {
+    const uint8_t input[] = {DEVICE_MSG_TYPE_ROTATION_STATE, 3, 1};
+    struct sc_device_msg msg;
+    assert(sc_device_msg_deserialize(input, 2, &msg) == 0);
+    assert(sc_device_msg_deserialize(input, sizeof(input), &msg) == 3);
+    assert(msg.type == DEVICE_MSG_TYPE_ROTATION_STATE);
+    assert(msg.rotation_state.rotation == 3);
+    assert(msg.rotation_state.frozen);
+    const uint8_t invalid[] = {DEVICE_MSG_TYPE_ROTATION_STATE, 4, 1};
+    assert(sc_device_msg_deserialize(invalid, 3, &msg) == -1);
+}
+
 int main(int argc, char *argv[]) {
     (void) argc;
     (void) argv;
@@ -91,5 +103,6 @@ int main(int argc, char *argv[]) {
     test_deserialize_clipboard_big();
     test_deserialize_ack_set_clipboard();
     test_deserialize_uhid_output();
+    test_deserialize_rotation_state();
     return 0;
 }

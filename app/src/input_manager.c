@@ -280,6 +280,20 @@ rotate_device(struct sc_input_manager *im) {
 }
 
 void
+sc_input_manager_request_rotation_mode(struct sc_input_manager *im,
+                                       enum sc_rotation_mode mode) {
+    if (!im->controller || im->camera || im->disconnected) {
+        return;
+    }
+    struct sc_control_msg msg = {0};
+    msg.type = SC_CONTROL_MSG_TYPE_SET_ROTATION_MODE;
+    msg.set_rotation_mode.mode = mode;
+    if (!sc_controller_push_msg(im->controller, &msg)) {
+        LOGW("Could not request rotation preset");
+    }
+}
+
+void
 sc_input_manager_press_shell_button(struct sc_input_manager *im,
                                     enum sc_shell_button button) {
     if (!im->controller || im->camera || im->disconnected) {
@@ -294,7 +308,8 @@ sc_input_manager_press_shell_button(struct sc_input_manager *im,
         return;
     }
     if (button == SC_SHELL_ROTATION) {
-        rotate_device(im);
+        // Use sc_input_manager_request_rotation_mode() from the screen,
+        // which owns the preset state. Do not toggle rotation here.
         return;
     }
     enum android_keycode code;

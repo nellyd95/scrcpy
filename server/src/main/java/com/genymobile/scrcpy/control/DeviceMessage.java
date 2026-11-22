@@ -5,12 +5,15 @@ public final class DeviceMessage {
     public static final int TYPE_CLIPBOARD = 0;
     public static final int TYPE_ACK_CLIPBOARD = 1;
     public static final int TYPE_UHID_OUTPUT = 2;
+    public static final int TYPE_ROTATION_STATE = 3;
 
     private int type;
     private String text;
     private long sequence;
     private int id;
     private byte[] data;
+    private int rotation;
+    private boolean rotationFrozen;
 
     private DeviceMessage() {
     }
@@ -35,6 +38,22 @@ public final class DeviceMessage {
         event.id = id;
         event.data = data;
         return event;
+    }
+
+    public static DeviceMessage createRotationState(int rotation, boolean frozen) {
+        DeviceMessage event = new DeviceMessage();
+        event.type = TYPE_ROTATION_STATE;
+        event.rotation = rotation;
+        event.rotationFrozen = frozen;
+        return event;
+    }
+
+    public int getRotation() {
+        return rotation;
+    }
+
+    public boolean isRotationFrozen() {
+        return rotationFrozen;
     }
 
     public int getType() {

@@ -7,6 +7,7 @@ void sc_rotation_sync_init(struct sc_rotation_sync_state *state) {
     state->current_sdl_rotation = 0;
     state->status = SC_ROTATION_SYNC_UNKNOWN;
     state->has_device_rotation = false;
+    state->device_rotation_frozen = false;
 }
 
 enum sc_rotation_mode sc_rotation_sync_next_mode(enum sc_rotation_mode current) {
@@ -27,42 +28,57 @@ bool sc_rotation_sync_mode_to_rotation(enum sc_rotation_mode mode, uint8_t *rota
     return false;
 }
 
-bool sc_rotation_sync_update_device(struct sc_rotation_sync_state *state, uint8_t device_rotation) {
+bool sc_rotation_sync_update_device_state(struct sc_rotation_sync_state *state,
+                                          uint8_t device_rotation, bool frozen) {
     assert(device_rotation < 4);
     state->confirmed_device_rotation = device_rotation;
-    state->has_device_rotation = true;
-    uint8_t requested_rotation;
-    bool forced = sc_rotation_sync_mode_to_rotation(state->requested_mode, &requested_rotation);
-    if (forced && requested_rotation != device_rotation) {
-        state->status = SC_ROTATION_SYNC_PENDING;
-        return false;
-    }
     state->current_sdl_rotation = device_rotation;
-    state->status = SC_ROTATION_SYNCED;
-    return true;
+    state->has_device_rotation = true;
+    state->device_rotation_frozen = frozen;
+
+    uint8_t requested_rotation = 0;
+    bool forced = sc_rotation_sync_mode_to_rotation(state->requested_mode,
+                                                     &requested_rotation);
+    bool matched = forced ? (frozen && requested_rotation == device_rotation)
+                          : !frozen;
+    state->status = matched ? SC_ROTATION_SYNCED : SC_ROTATION_SYNC_PENDING;
+    return matched;
 }
 
-bool sc_rotation_sync_set_requested_mode(struct sc_rotation_sync_state *state, enum sc_rotation_mode mode) {
+bool sc_rotation_sync_update_device(struct sc_rotation_sync_state *state,
+                                   uint8_t device_rotation) {
+    // Convenience for the existing pure-rotation tests. The protocol uses
+    // sc_rotation_sync_update_device_state() with Android's actual freeze flag.
+    bool inferred_frozen = state->requested_mode != SC_ROTATION_MODE_AUTO;
+    return sc_rotation_sync_update_device_state(state, device_rotation,
+                                                inferred_frozen);
+}
+
+bool sc_rotation_sync_set_requested_mode(struct sc_rotation_sync_state *state,
+                                        enum sc_rotation_mode mode) {
     assert(mode >= SC_ROTATION_MODE_AUTO && mode < SC_ROTATION_MODE_COUNT);
     state->requested_mode = mode;
     if (!state->has_device_rotation) {
         state->status = SC_ROTATION_SYNC_UNKNOWN;
         return false;
     }
-    uint8_t requested_rotation;
-    bool forced = sc_rotation_sync_mode_to_rotation(mode, &requested_rotation);
-    if (forced && requested_rotation != state->confirmed_device_rotation) {
-        state->status = SC_ROTATION_SYNC_PENDING;
-        return false;
-    }
-    state->current_sdl_rotation = state->confirmed_device_rotation;
-    state->status = SC_ROTATION_SYNCED;
-    return true;
+
+    uint8_t desired = 0;
+    bool forced = sc_rotation_sync_mode_to_rotation(mode, &desired);
+    bool matched = forced
+                 ? (state->device_rotation_frozen
+                    && state->confirmed_device_rotation == desired)
+                 : !state->device_rotation_frozen;
+    state->status = matched ? SC_ROTATION_SYNCED : SC_ROTATION_SYNC_PENDING;
+    return matched;
 }
 
-bool sc_rotation_sync_get_sdl_rotation(const struct sc_rotation_sync_state *state, uint8_t *rotation) {
+bool sc_rotation_sync_get_sdl_rotation(const struct sc_rotation_sync_state *state,
+                                       uint8_t *rotation) {
     assert(rotation);
-    if (!state->has_device_rotation || state->status != SC_ROTATION_SYNCED) return false;
+    if (!state->has_device_rotation || state->status != SC_ROTATION_SYNCED) {
+        return false;
+    }
     *rotation = state->current_sdl_rotation;
     return true;
 }

@@ -6,6 +6,7 @@ import com.genymobile.scrcpy.CleanUp;
 import com.genymobile.scrcpy.Options;
 import com.genymobile.scrcpy.device.Device;
 import com.genymobile.scrcpy.display.DisplayInfo;
+import com.genymobile.scrcpy.display.DisplayMonitor;
 import com.genymobile.scrcpy.model.DeviceApp;
 import com.genymobile.scrcpy.model.Point;
 import com.genymobile.scrcpy.model.Position;
@@ -84,6 +85,7 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
     private Thread keepActiveThread;
 
     private UhidManager uhidManager;
+    private DisplayMonitor rotationMonitor;
 
     private final boolean camera;
     private final int displayId;
@@ -177,6 +179,22 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
 
     public void setSurfaceCapture(SurfaceCapture surfaceCapture) {
         this.surfaceCapture = surfaceCapture;
+    }
+
+    private void reportRotationState(int id) {
+        if (camera || sender == null || id == Device.DISPLAY_ID_NONE) {
+            return;
+        }
+        DisplayInfo info = ServiceManager.getDisplayManager().getDisplayInfo(id);
+        if (info == null) {
+            return;
+        }
+        int rotation = info.getRotation();
+        if (rotation < 0 || rotation > 3) {
+            return;
+        }
+        boolean frozen = ServiceManager.getWindowManager().isRotationFrozen(id);
+        sender.send(DeviceMessage.createRotationState(rotation, frozen));
     }
 
     private UhidManager getUhidManager() {
@@ -292,11 +310,24 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
         thread.start();
         if (sender != null) {
             sender.start();
+            if (displayId != Device.DISPLAY_ID_NONE) {
+                rotationMonitor = new DisplayMonitor();
+                rotationMonitor.start(displayId, props -> {
+                    if (props != null) {
+                        reportRotationState(displayId);
+                    }
+                });
+                reportRotationState(displayId);
+            }
         }
     }
 
     @Override
     public void stop() {
+        if (rotationMonitor != null) {
+            rotationMonitor.stopAndRelease();
+            rotationMonitor = null;
+        }
         if (keepActiveThread != null) {
             keepActiveThread.interrupt();
         }
@@ -393,8 +424,23 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
                     int actionDisplayId = getActionDisplayId();
                     if (actionDisplayId != Device.DISPLAY_ID_NONE) {
                         Device.rotateDevice(actionDisplayId);
+                        reportRotationState(actionDisplayId);
                     }
                     return true;
+                case ControlMessage.TYPE_SET_ROTATION_MODE: {
+                    int targetId = getActionDisplayId();
+                    if (targetId != Device.DISPLAY_ID_NONE) {
+                        int mode = msg.getRotationMode();
+                        if (mode == 0) {
+                            ServiceManager.getWindowManager().thawRotation(targetId);
+                        } else {
+                            ServiceManager.getWindowManager().freezeRotation(
+                                    targetId, mode - 1);
+                        }
+                        reportRotationState(targetId);
+                    }
+                    return true;
+                }
                 case ControlMessage.TYPE_UHID_CREATE:
                     getUhidManager().open(msg.getId(), msg.getVendorId(), msg.getProductId(), msg.getText(), msg.getData());
                     return true;

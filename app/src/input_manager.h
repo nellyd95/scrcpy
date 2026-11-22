@@ -10,6 +10,7 @@
 
 #include "controller.h"
 #include "screen_controls.h"
+#include "rotation_sync.h"
 #include "file_pusher.h"
 #include "options.h"
 #include "trait/gamepad_processor.h"
@@ -77,5 +78,9 @@ sc_input_manager_handle_event(struct sc_input_manager *im,
 void
 sc_input_manager_press_shell_button(struct sc_input_manager *im,
                                     enum sc_shell_button button);
+
+void
+sc_input_manager_request_rotation_mode(struct sc_input_manager *im,
+                                       enum sc_rotation_mode mode);
 
 #endif

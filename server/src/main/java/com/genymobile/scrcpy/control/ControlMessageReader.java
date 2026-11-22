@@ -64,6 +64,13 @@ public class ControlMessageReader {
                 return parseResizeDisplay();
             case ControlMessage.TYPE_SCAN_FILE:
                 return parseScanFile();
+            case ControlMessage.TYPE_SET_ROTATION_MODE: {
+                int mode = dis.readUnsignedByte();
+                if (mode >= 5) {
+                    throw new ControlProtocolException("Invalid rotation mode: " + mode);
+                }
+                return ControlMessage.createSetRotationMode(mode);
+            }
             default:
                 throw new ControlProtocolException("Unknown event type: " + type);
         }

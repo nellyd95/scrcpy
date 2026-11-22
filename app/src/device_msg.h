@@ -3,6 +3,7 @@
 
 #include "common.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -15,6 +16,7 @@ enum sc_device_msg_type {
     DEVICE_MSG_TYPE_CLIPBOARD,
     DEVICE_MSG_TYPE_ACK_CLIPBOARD,
     DEVICE_MSG_TYPE_UHID_OUTPUT,
+    DEVICE_MSG_TYPE_ROTATION_STATE,
 };
 
 struct sc_device_msg {
@@ -26,6 +28,10 @@ struct sc_device_msg {
         struct {
             uint64_t sequence;
         } ack_clipboard;
+        struct {
+            uint8_t rotation;
+            bool frozen;
+        } rotation_state;
         struct {
             uint16_t id;
             uint16_t size;

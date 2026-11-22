@@ -46,6 +46,17 @@ sc_device_msg_deserialize(const uint8_t *buf, size_t len,
             msg->ack_clipboard.sequence = sequence;
             return 9;
         }
+        case DEVICE_MSG_TYPE_ROTATION_STATE:
+            if (len < 3) {
+                return 0;
+            }
+            if (buf[1] >= 4 || buf[2] > 1) {
+                LOGW("Invalid rotation state from device");
+                return -1;
+            }
+            msg->rotation_state.rotation = buf[1];
+            msg->rotation_state.frozen = buf[2] != 0;
+            return 3;
         case DEVICE_MSG_TYPE_UHID_OUTPUT: {
             if (len < 5) {
                 // at least id + size

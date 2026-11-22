@@ -154,6 +154,9 @@ sc_control_msg_serialize(const struct sc_control_msg *msg, uint8_t *buf) {
         case SC_CONTROL_MSG_TYPE_SET_DISPLAY_POWER:
             buf[1] = msg->set_display_power.on;
             return 2;
+        case SC_CONTROL_MSG_TYPE_SET_ROTATION_MODE:
+            buf[1] = msg->set_rotation_mode.mode;
+            return 2;
         case SC_CONTROL_MSG_TYPE_UHID_CREATE:
             sc_write16be(&buf[1], msg->uhid_create.id);
             sc_write16be(&buf[3], msg->uhid_create.vendor_id);
@@ -297,6 +300,9 @@ sc_control_msg_log(const struct sc_control_msg *msg) {
             break;
         case SC_CONTROL_MSG_TYPE_ROTATE_DEVICE:
             LOG_CMSG("rotate device");
+            break;
+        case SC_CONTROL_MSG_TYPE_SET_ROTATION_MODE:
+            LOG_CMSG("rotation mode %u", (unsigned) msg->set_rotation_mode.mode);
             break;
         case SC_CONTROL_MSG_TYPE_UHID_CREATE: {
             // Quote only if name is not null

@@ -308,6 +308,18 @@ static void test_serialize_set_display_power(void) {
     assert(!memcmp(buf, expected, sizeof(expected)));
 }
 
+static void test_serialize_rotation_mode(void) {
+    struct sc_control_msg msg = {
+        .type = SC_CONTROL_MSG_TYPE_SET_ROTATION_MODE,
+        .set_rotation_mode = {.mode = 4},
+    };
+    uint8_t buf[SC_CONTROL_MSG_MAX_SIZE];
+    size_t size = sc_control_msg_serialize(&msg, buf);
+    assert(size == 2);
+    const uint8_t expected[] = {SC_CONTROL_MSG_TYPE_SET_ROTATION_MODE, 4};
+    assert(!memcmp(buf, expected, sizeof(expected)));
+}
+
 static void test_serialize_rotate_device(void) {
     struct sc_control_msg msg = {
         .type = SC_CONTROL_MSG_TYPE_ROTATE_DEVICE,
@@ -554,6 +566,7 @@ int main(int argc, char *argv[]) {
     test_serialize_set_clipboard();
     test_serialize_set_clipboard_long();
     test_serialize_set_display_power();
+    test_serialize_rotation_mode();
     test_serialize_rotate_device();
     test_serialize_uhid_create();
     test_serialize_uhid_input();

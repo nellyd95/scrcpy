@@ -50,6 +50,7 @@ enum sc_control_msg_type {
     SC_CONTROL_MSG_TYPE_CAMERA_ZOOM_OUT,
     SC_CONTROL_MSG_TYPE_RESIZE_DISPLAY,
     SC_CONTROL_MSG_TYPE_SCAN_FILE,
+    SC_CONTROL_MSG_TYPE_SET_ROTATION_MODE,
 };
 
 enum sc_copy_key {
@@ -99,6 +100,9 @@ struct sc_control_msg {
         struct {
             bool on;
         } set_display_power;
+        struct {
+            uint8_t mode; // enum sc_rotation_mode (0 to 4)
+        } set_rotation_mode;
         struct {
             uint16_t id;
             uint16_t vendor_id;

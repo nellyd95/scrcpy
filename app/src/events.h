@@ -22,6 +22,12 @@ enum {
     SC_EVENT_AOA_OPEN_ERROR,
     SC_EVENT_DISCONNECTED_ICON_LOADED,
     SC_EVENT_DISCONNECTED_TIMEOUT,
+    SC_EVENT_ROTATION_STATE,
+};
+
+struct sc_device_rotation_event {
+    uint8_t rotation;
+    bool frozen;
 };
 
 bool

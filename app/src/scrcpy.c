@@ -122,6 +122,13 @@ event_loop(struct scrcpy *s, bool has_screen) {
     SDL_Event event;
     while (SDL_WaitEvent(&event)) {
         switch (event.type) {
+            case SC_EVENT_ROTATION_STATE:
+                if (has_screen) {
+                    sc_screen_handle_event(&s->screen, &event);
+                } else {
+                    free(event.user.data1);
+                }
+                break;
             case SC_EVENT_DEVICE_DISCONNECTED:
                 LOGW("Device disconnected");
                 if (has_screen) {
@@ -177,6 +184,9 @@ await_for_server(bool *connected) {
                     *connected = true;
                 }
                 return true;
+            case SC_EVENT_ROTATION_STATE:
+                free(event.user.data1);
+                break;
             default:
                 break;
         }

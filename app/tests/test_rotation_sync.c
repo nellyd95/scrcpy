@@ -51,9 +51,23 @@ static void test_external_change_in_auto(void) {
     assert(state.current_sdl_rotation == 2 && state.status == SC_ROTATION_SYNCED);
 }
 
+static void test_frozen_acknowledgement(void) {
+    struct sc_rotation_sync_state s;
+    sc_rotation_sync_init(&s);
+    assert(!sc_rotation_sync_update_device_state(&s, 0, true));
+    assert(!sc_rotation_sync_set_requested_mode(&s, SC_ROTATION_MODE_LANDSCAPE));
+    assert(!sc_rotation_sync_update_device_state(&s, 1, false));
+    assert(s.status == SC_ROTATION_SYNC_PENDING);
+    assert(sc_rotation_sync_update_device_state(&s, 1, true));
+    assert(s.status == SC_ROTATION_SYNCED);
+    assert(!sc_rotation_sync_set_requested_mode(&s, SC_ROTATION_MODE_AUTO));
+    assert(sc_rotation_sync_update_device_state(&s, 1, false));
+}
+
 int main(int argc, char *argv[]) {
     (void) argc; (void) argv;
     test_cycle(); test_mapping(); test_auto_tracks_device();
     test_forced_mode_waits_for_ack(); test_external_change_in_auto();
+    test_frozen_acknowledgement();
     return 0;
 }
