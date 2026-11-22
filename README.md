@@ -15,48 +15,56 @@ computer's keyboard and mouse. It does not require _root_ access or an app
 installed on the device. It works on _Linux_, _Windows_, and _macOS_.
 
 
-## Fork development: native controls and Windows phone-shell
+## Fork development: native phone-shell controls and five-mode rotation
 
 > [!NOTE]
-> This section describes experimental work maintained specifically in the
-> `nellyd95/scrcpy` fork on the `Contribute` branch. It is not part of an
-> official upstream scrcpy release. The upstream project and its release
-> downloads remain maintained at <https://github.com/Genymobile/scrcpy>.
+> This section describes experimental functionality specific to the
+> `nellyd95/scrcpy` fork's `Contribute` branch, not an official upstream
+> scrcpy release.
 
-The fork is being extended toward a Windows desktop phone-shell that retains
-scrcpy's existing ADB connection, Android server, video pipeline, SDL renderer,
-and control protocol. The intended interface includes a compact desktop
-command bar, a phone frame with directly attached physical-style controls, a
-button ledger, device status, and rotation synchronization diagnostics.
+The Windows SDL3 phone shell keeps scrcpy's existing Android server, ADB
+transport, video/audio pipeline and native renderer. It adds compact
+physical-style controls around the video (never over the phone display),
+a button ledger, status diagnostics and five-mode rotation cycling.
 
-### Development status
+### Rotation (tested on Motorola Moto G 5G, Android 15)
 
-- **Rotation state model:** added in `app/src/rotation_sync.c` and
-  `app/src/rotation_sync.h`. It models Auto, Portrait, Landscape, Reverse
-  Portrait, and Reverse Landscape, and waits for a confirmed device rotation
-  before considering a forced mode synchronized.
-- **Rotation unit tests:** added in `app/tests/test_rotation_sync.c` and
-  registered as the `test_rotation_sync` Meson test target. Verified passing
-  on the Windows QA machine (13/13 Meson tests passed overall).
-- **Design and protocol notes:** see
-  [Windows phone-shell wrapper and SDL control integration](doc/phone-shell-wrapper.md).
-- **Native SDL control buttons, Android rotation-state protocol, Windows
-  wrapper, and end-to-end device synchronization:** still in progress; do not
-  treat them as implemented or verified yet.
-- **Windows build and CLI smoke test:** passed on Admin PC from a clean
-  `Contribute` checkout using MSYS2 UCRT64, GCC 16.2, SDL 3.4.20, Meson 1.12.1,
-  Ninja 1.13.2, and FFmpeg libraries. All 13 Meson tests passed; the resulting
-  `scrcpy.exe` started successfully for `--version` and `--help`, and ADB
-  recognized the USB-connected Moto G 5G. See [Windows QA results](doc/qa-windows-adminpc-20261122.md).
-- **End-to-end interactive device QA and finished phone-shell UI:** not yet
-  verified; the native buttons and full Android rotation-state protocol remain
-  unfinished.
+The **ROTATE** button cycles through **Auto (Sensor) → Portrait (0°) →
+Landscape (90°) → Reverse Portrait (180°) → Reverse Landscape (270°) → Auto**.
+Android reports the actual display rotation and frozen/free state. The UI
+shows **SYNCED** only when Android confirms both requested properties.
+Both the matching fork client and the patched server must be used.
 
-The rotation model is a preparatory component, not a complete user-facing
-feature. In particular, video dimensions alone cannot distinguish reverse
-portrait from portrait or reverse landscape from landscape; the planned
-end-to-end implementation must report the actual Android display rotation over
-the device-to-client protocol.
+On the Moto G 5G, forcing a rotation lock alone did not rotate the display.
+The Android server now temporarily enables Android's
+`fixed-to-user-rotation` policy for forced modes, explicitly enables
+sensor rotation for Auto, and **restores the original rotation lock,
+fixed policy and accelerometer setting** when the session closes normally.
+
+After the final build, all five presets were verified through the actual
+scrcpy ROTATE control, the display/video switched between portrait and
+landscape, and the UI showed **SYNCED** in each mode. Restarting scrcpy
+while the handset was already in locked Portrait correctly displayed
+**Portrait — SYNCED** on first device-state acknowledgement.
+
+### Verification and documentation
+
+- **Windows build:** MSYS2 UCRT64 / GCC 16.2 / SDL3 3.4.20 / Meson 1.12.1.
+- **Native unit tests:** **14/14 passed**, including rotation-mode and
+  protocol serialization/deserialization tests.
+- **Android server:** built with JDK 17 and Android API 35 build tools.
+- **Real device:** Moto G 5G (2024), Android 15, connected via USB ADB.
+- **Screenshot:** the SHOT button saves a BMP of the native window.
+- **Recording:** existing scrcpy CLI `--record=FILE` still works, but
+  the runtime REC indicator is intentionally inactive.
+- **Outstanding:** physical hand-rotation in Auto mode and broader OEM
+  compatibility have not been independently verified; the interface remains
+  an experimental fork implementation.
+
+See the [phone-shell controls guide](docs/phone-shell-controls.md) and the
+[five-mode rotation QA report](docs/rotation-qa-20261122.md). The existing
+[earlier baseline QA report](doc/qa-windows-adminpc-20261122.md) documents
+the previous development checkpoint.
 
 [![Linux](https://img.shields.io/badge/Linux-download-orange?style=for-the-badge&logo=linux)](doc/linux.md)&nbsp;
 [![Windows](https://img.shields.io/badge/Windows-download-blue?style=for-the-badge&logo=windows)](doc/windows.md)&nbsp;

@@ -11,6 +11,7 @@ import com.genymobile.scrcpy.model.DeviceApp;
 import com.genymobile.scrcpy.model.Point;
 import com.genymobile.scrcpy.model.Position;
 import com.genymobile.scrcpy.model.Size;
+import com.genymobile.scrcpy.util.Command;
 import com.genymobile.scrcpy.util.Ln;
 import com.genymobile.scrcpy.util.LogUtils;
 import com.genymobile.scrcpy.video.CameraCapture;
@@ -86,6 +87,16 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
 
     private UhidManager uhidManager;
     private DisplayMonitor rotationMonitor;
+    // Snapshot the device policy before the FIRST explicit preset request.
+    // A client disconnect must never leave the physical device forced into
+    // a different orientation or persistently override the user's policy.
+    private final Object rotationPolicyLock = new Object();
+    private boolean rotationPolicySaved;
+    private int rotationPolicyDisplayId = Device.DISPLAY_ID_NONE;
+    private int savedFixedToUserRotation;
+    private int savedUserRotation;
+    private boolean savedRotationFrozen;
+    private String savedAccelerometerRotation;
 
     private final boolean camera;
     private final int displayId;
@@ -195,6 +206,119 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
         }
         boolean frozen = ServiceManager.getWindowManager().isRotationFrozen(id);
         sender.send(DeviceMessage.createRotationState(rotation, frozen));
+    }
+
+    private void applyRotationMode(int id, int mode) {
+        synchronized (rotationPolicyLock) {
+            com.genymobile.scrcpy.wrappers.WindowManager wm =
+                    ServiceManager.getWindowManager();
+            if (!rotationPolicySaved) {
+                int fixed = wm.getFixedToUserRotation(id);
+                int oldUserRotation = wm.getDisplayUserRotation(id);
+                if (fixed < 0 || oldUserRotation < 0) {
+                    // Do not mutate global device settings without enough
+                    // information to restore the previous user configuration.
+                    Ln.e("Cannot safely take control of device rotation");
+                    return;
+                }
+                savedFixedToUserRotation = fixed;
+                savedUserRotation = oldUserRotation;
+                savedRotationFrozen = wm.isRotationFrozen(id);
+                try {
+                    savedAccelerometerRotation = Command.execReadLine(
+                            "/system/bin/cmd", "settings", "get",
+                            "system", "accelerometer_rotation");
+                } catch (IOException | InterruptedException e) {
+                    Ln.w("Could not snapshot accelerometer rotation setting: " + e);
+                    savedAccelerometerRotation = null;
+                }
+                rotationPolicyDisplayId = id;
+                rotationPolicySaved = true;
+                Ln.i("Saved initial device rotation policy: fixed="
+                        + fixed + ", rotation=" + oldUserRotation
+                        + ", frozen=" + savedRotationFrozen);
+            } else if (rotationPolicyDisplayId != id) {
+                Ln.e("Cannot switch rotation policy between displays");
+                return;
+            }
+
+            if (mode == 0) {
+                // AUTO/SENSOR: deliberately DISABLE the fixed policy so
+                // Android can follow the accelerometer/app orientation.
+                // The original fixed policy is restored on disconnect.
+                if (wm.setFixedToUserRotation(
+                        id, com.genymobile.scrcpy.wrappers.WindowManager.FIXED_TO_USER_ROTATION_DISABLED)) {
+                    // On some Motorola ROMs invoking the binder thaw method
+                    // does not update the system's accelerometer_rotation
+                    // setting. Android's own shell command does both.
+                    try {
+                        Command.exec("/system/bin/cmd", "window", "user-rotation",
+                                "-d", String.valueOf(id), "free");
+                        // Some Motorola firmware updates the lock without
+                        // enabling the corresponding sensor setting. Explicitly
+                        // enable accelerometer rotation in Auto mode.
+                        Command.exec("/system/bin/cmd", "settings", "put",
+                                "system", "accelerometer_rotation", "1");
+                        Ln.i("Auto rotation enabled: "
+                                + Command.execReadLine("/system/bin/cmd",
+                                        "window", "user-rotation", "-d",
+                                        String.valueOf(id)));
+                    } catch (IOException | InterruptedException e) {
+                        Ln.w("Could not enable sensor rotation with shell command: " + e);
+                        if (e instanceof InterruptedException) {
+                            Thread.currentThread().interrupt();
+                        }
+                        wm.thawRotation(id);
+                    }
+                }
+            } else {
+                // On Android 15 Motorola devices, freezeRotation() alone
+                // records the requested angle but leaves mRotation unchanged.
+                // The fixed-to-user policy is essential for 90/180/270.
+                if (wm.setFixedToUserRotation(
+                        id, com.genymobile.scrcpy.wrappers.WindowManager.FIXED_TO_USER_ROTATION_ENABLED)) {
+                    wm.freezeRotation(id, mode - 1);
+                }
+            }
+        }
+
+        // This report may temporarily be PENDING while Android executes the
+        // rotation; DisplayMonitor reports the final confirmed display angle.
+        reportRotationState(id);
+    }
+
+    private void restoreRotationPolicy() {
+        synchronized (rotationPolicyLock) {
+            if (!rotationPolicySaved) {
+                return;
+            }
+
+            int id = rotationPolicyDisplayId;
+            com.genymobile.scrcpy.wrappers.WindowManager wm =
+                    ServiceManager.getWindowManager();
+            // Restore the user's original orientation before releasing our
+            // fixed-policy override, preventing a stranded landscape mode.
+            if (savedRotationFrozen) {
+                wm.freezeRotation(id, savedUserRotation);
+            } else {
+                wm.thawRotation(id);
+            }
+            wm.setFixedToUserRotation(id, savedFixedToUserRotation);
+            if ("0".equals(savedAccelerometerRotation)
+                    || "1".equals(savedAccelerometerRotation)) {
+                try {
+                    Command.exec("/system/bin/cmd", "settings", "put",
+                            "system", "accelerometer_rotation",
+                            savedAccelerometerRotation);
+                } catch (IOException | InterruptedException e) {
+                    Ln.w("Could not restore original accelerometer setting: " + e);
+                }
+            }
+            savedAccelerometerRotation = null;
+            rotationPolicySaved = false;
+            rotationPolicyDisplayId = Device.DISPLAY_ID_NONE;
+            Ln.i("Restored original device rotation policy");
+        }
     }
 
     private UhidManager getUhidManager() {
@@ -324,6 +448,7 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
 
     @Override
     public void stop() {
+        restoreRotationPolicy();
         if (rotationMonitor != null) {
             rotationMonitor.stopAndRelease();
             rotationMonitor = null;
@@ -431,13 +556,11 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
                     int targetId = getActionDisplayId();
                     if (targetId != Device.DISPLAY_ID_NONE) {
                         int mode = msg.getRotationMode();
-                        if (mode == 0) {
-                            ServiceManager.getWindowManager().thawRotation(targetId);
+                        if (mode >= 0 && mode <= 4) {
+                            applyRotationMode(targetId, mode);
                         } else {
-                            ServiceManager.getWindowManager().freezeRotation(
-                                    targetId, mode - 1);
+                            Ln.w("Ignoring invalid rotation mode " + mode);
                         }
-                        reportRotationState(targetId);
                     }
                     return true;
                 }

@@ -54,7 +54,8 @@ static void test_external_change_in_auto(void) {
 static void test_frozen_acknowledgement(void) {
     struct sc_rotation_sync_state s;
     sc_rotation_sync_init(&s);
-    assert(!sc_rotation_sync_update_device_state(&s, 0, true));
+    assert(sc_rotation_sync_update_device_state(&s, 0, true));
+    assert(s.requested_mode == SC_ROTATION_MODE_PORTRAIT);
     assert(!sc_rotation_sync_set_requested_mode(&s, SC_ROTATION_MODE_LANDSCAPE));
     assert(!sc_rotation_sync_update_device_state(&s, 1, false));
     assert(s.status == SC_ROTATION_SYNC_PENDING);
@@ -64,10 +65,41 @@ static void test_frozen_acknowledgement(void) {
     assert(sc_rotation_sync_update_device_state(&s, 1, false));
 }
 
+static void test_startup_follows_authoritative_device(void) {
+    struct sc_rotation_sync_state s;
+    sc_rotation_sync_init(&s);
+    assert(!s.request_pending);
+    assert(sc_rotation_sync_update_device_state(&s, 0, true));
+    assert(s.requested_mode == SC_ROTATION_MODE_PORTRAIT);
+    assert(s.status == SC_ROTATION_SYNCED);
+    assert(sc_rotation_sync_update_device_state(&s, 3, true));
+    assert(s.requested_mode == SC_ROTATION_MODE_REVERSE_LANDSCAPE);
+    assert(sc_rotation_sync_update_device_state(&s, 2, false));
+    assert(s.requested_mode == SC_ROTATION_MODE_AUTO);
+    assert(s.status == SC_ROTATION_SYNCED);
+}
+
+static void test_request_prevents_premature_external_adoption(void) {
+    struct sc_rotation_sync_state s;
+    sc_rotation_sync_init(&s);
+    assert(sc_rotation_sync_update_device_state(&s, 0, true));
+    assert(!sc_rotation_sync_set_requested_mode(
+            &s, SC_ROTATION_MODE_REVERSE_LANDSCAPE));
+    assert(s.request_pending);
+    assert(!sc_rotation_sync_update_device_state(&s, 1, true));
+    assert(s.requested_mode == SC_ROTATION_MODE_REVERSE_LANDSCAPE);
+    assert(s.status == SC_ROTATION_SYNC_PENDING);
+    assert(sc_rotation_sync_update_device_state(&s, 3, true));
+    assert(!s.request_pending);
+    assert(s.status == SC_ROTATION_SYNCED);
+}
+
 int main(int argc, char *argv[]) {
     (void) argc; (void) argv;
     test_cycle(); test_mapping(); test_auto_tracks_device();
     test_forced_mode_waits_for_ack(); test_external_change_in_auto();
     test_frozen_acknowledgement();
+    test_startup_follows_authoritative_device();
+    test_request_prevents_premature_external_adoption();
     return 0;
 }

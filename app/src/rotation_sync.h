@@ -27,6 +27,9 @@ struct sc_rotation_sync_state {
     enum sc_rotation_sync_status status;
     bool has_device_rotation;
     bool device_rotation_frozen;
+    // A local UI request is outstanding until Android reports a match.
+    // Otherwise the device is authoritative, including external changes.
+    bool request_pending;
 };
 
 void sc_rotation_sync_init(struct sc_rotation_sync_state *state);

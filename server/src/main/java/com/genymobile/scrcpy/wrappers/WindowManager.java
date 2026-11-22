@@ -2,6 +2,7 @@ package com.genymobile.scrcpy.wrappers;
 
 import com.genymobile.scrcpy.AndroidVersions;
 import com.genymobile.scrcpy.util.Ln;
+import com.genymobile.scrcpy.util.Command;
 
 import android.annotation.TargetApi;
 import android.os.Build;
@@ -18,6 +19,13 @@ public final class WindowManager {
     public static final int DISPLAY_IME_POLICY_FALLBACK_DISPLAY = 1;
     public static final int DISPLAY_IME_POLICY_HIDE = 2;
 
+    // IWindowManager fixed-to-user-rotation policy constants (Android 11+).
+    // Unlike freezeDisplayRotation(), ENABLED makes Android honor all four
+    // user rotation angles even on devices normally restricting app rotation.
+    public static final int FIXED_TO_USER_ROTATION_DEFAULT = 0;
+    public static final int FIXED_TO_USER_ROTATION_DISABLED = 1;
+    public static final int FIXED_TO_USER_ROTATION_ENABLED = 2;
+
     private final IInterface manager;
     private Method getRotationMethod;
 
@@ -29,6 +37,10 @@ public final class WindowManager {
 
     private Method thawDisplayRotationMethod;
     private int thawDisplayRotationMethodVersion;
+
+    private Method getFixedToUserRotationMethod;
+    private Method setFixedToUserRotationMethod;
+    private Method getDisplayUserRotationMethod;
 
     private Method getDisplayImePolicyMethod;
     private Method setDisplayImePolicyMethod;
@@ -189,6 +201,104 @@ public final class WindowManager {
         } catch (ReflectiveOperationException e) {
             Ln.e("Could not invoke method", e);
         }
+    }
+
+    // Some Android vendors expose the setter through the IWindowManager
+    // binder proxy but not the corresponding getter. The Android shell
+    // command uses WindowManagerInternal and is therefore the compatible
+    // way to capture the original policy before any modification.
+    private static String readWindowCommand(String... args) {
+        try {
+            String[] command = new String[args.length + 2];
+            command[0] = "/system/bin/cmd";
+            command[1] = "window";
+            System.arraycopy(args, 0, command, 2, args.length);
+            return Command.execReadLine(command);
+        } catch (Exception e) {
+            Ln.w("Could not read Android window-manager state: " + e);
+            return null;
+        }
+    }
+
+    public int getFixedToUserRotation(int displayId) {
+        String result = readWindowCommand("fixed-to-user-rotation",
+                "-d", String.valueOf(displayId));
+        if ("default".equals(result)) {
+            return FIXED_TO_USER_ROTATION_DEFAULT;
+        }
+        if ("disabled".equals(result)) {
+            return FIXED_TO_USER_ROTATION_DISABLED;
+        }
+        if ("enabled".equals(result)) {
+            return FIXED_TO_USER_ROTATION_ENABLED;
+        }
+        if ("enabled_if_no_auto_rotation".equals(result)) {
+            return 3;
+        }
+        Ln.w("Unexpected fixed-to-user-rotation response: " + result);
+        return -1;
+    }
+
+    public boolean setFixedToUserRotation(int displayId, int mode) {
+        if (mode < 0 || mode > 3) {
+            return false;
+        }
+
+        try {
+            if (setFixedToUserRotationMethod == null) {
+                setFixedToUserRotationMethod = manager.getClass().getMethod(
+                        "setFixedToUserRotation", int.class, int.class);
+            }
+            setFixedToUserRotationMethod.invoke(manager, displayId, mode);
+            return true;
+        } catch (ReflectiveOperationException | SecurityException e) {
+            // Android ROMs have differing IWindowManager proxy methods.
+            // Use the same shell command as adb shell wm if unavailable.
+            final String option;
+            switch (mode) {
+                case FIXED_TO_USER_ROTATION_DEFAULT:
+                    option = "default";
+                    break;
+                case FIXED_TO_USER_ROTATION_DISABLED:
+                    option = "disabled";
+                    break;
+                case FIXED_TO_USER_ROTATION_ENABLED:
+                    option = "enabled";
+                    break;
+                default:
+                    option = "enabled_if_no_auto_rotation";
+                    break;
+            }
+            try {
+                Command.exec("/system/bin/cmd", "window", "fixed-to-user-rotation",
+                        "-d", String.valueOf(displayId), option);
+                return true;
+            } catch (Exception fallback) {
+                Ln.e("Could not change fixed-to-user-rotation policy", fallback);
+                return false;
+            }
+        }
+    }
+
+    public int getDisplayUserRotation(int displayId) {
+        String state = readWindowCommand("user-rotation",
+                "-d", String.valueOf(displayId));
+        if (state != null && state.startsWith("lock ")) {
+            try {
+                int value = Integer.parseInt(state.substring(5).trim());
+                return value >= 0 && value <= 3 ? value : -1;
+            } catch (NumberFormatException e) {
+                Ln.w("Invalid user-rotation response: " + state);
+            }
+        }
+        if ("free".equals(state)) {
+            // The prior display user angle is irrelevant when its original
+            // rotation mode was free. A valid fallback still allows us to
+            // restore free mode without discarding the original fixed policy.
+            return getRotation();
+        }
+        Ln.w("Could not determine original user rotation: " + state);
+        return -1;
     }
 
     @TargetApi(AndroidVersions.API_30_ANDROID_11)

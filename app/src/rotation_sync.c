@@ -8,6 +8,7 @@ void sc_rotation_sync_init(struct sc_rotation_sync_state *state) {
     state->status = SC_ROTATION_SYNC_UNKNOWN;
     state->has_device_rotation = false;
     state->device_rotation_frozen = false;
+    state->request_pending = false;
 }
 
 enum sc_rotation_mode sc_rotation_sync_next_mode(enum sc_rotation_mode current) {
@@ -36,12 +37,24 @@ bool sc_rotation_sync_update_device_state(struct sc_rotation_sync_state *state,
     state->has_device_rotation = true;
     state->device_rotation_frozen = frozen;
 
+    if (!state->request_pending) {
+        // On startup, and after an acknowledged local request, follow
+        // Android's actual rotation mode instead of showing a false
+        // pending Auto request over a physically locked screen.
+        state->requested_mode = frozen
+            ? (enum sc_rotation_mode) (device_rotation + 1)
+            : SC_ROTATION_MODE_AUTO;
+    }
+
     uint8_t requested_rotation = 0;
     bool forced = sc_rotation_sync_mode_to_rotation(state->requested_mode,
                                                      &requested_rotation);
     bool matched = forced ? (frozen && requested_rotation == device_rotation)
                           : !frozen;
     state->status = matched ? SC_ROTATION_SYNCED : SC_ROTATION_SYNC_PENDING;
+    if (matched) {
+        state->request_pending = false;
+    }
     return matched;
 }
 
@@ -58,6 +71,7 @@ bool sc_rotation_sync_set_requested_mode(struct sc_rotation_sync_state *state,
                                         enum sc_rotation_mode mode) {
     assert(mode >= SC_ROTATION_MODE_AUTO && mode < SC_ROTATION_MODE_COUNT);
     state->requested_mode = mode;
+    state->request_pending = true;
     if (!state->has_device_rotation) {
         state->status = SC_ROTATION_SYNC_UNKNOWN;
         return false;
@@ -70,6 +84,9 @@ bool sc_rotation_sync_set_requested_mode(struct sc_rotation_sync_state *state,
                     && state->confirmed_device_rotation == desired)
                  : !state->device_rotation_frozen;
     state->status = matched ? SC_ROTATION_SYNCED : SC_ROTATION_SYNC_PENDING;
+    if (matched) {
+        state->request_pending = false;
+    }
     return matched;
 }
 

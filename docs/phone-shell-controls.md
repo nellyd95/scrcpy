@@ -62,19 +62,36 @@ SCRCPY_SCREENSHOT_DIR if set, otherwise the executable directory.
 The destination must be writable. This is not video recording.
 To record video use the normal scrcpy --record=FILE CLI option at startup.
 
-## QA evidence (Admin PC, November 22, 2026)
+## Implemented rotation policy and state flow
 
-- Compiled native client with SDL 3.4.20, GCC 16.2.0, Meson 1.12.1 and Ninja 1.13.2.
-- Built the Android server with Java 17 / Android 35 build tools.
-- Connected to Motorola Moto G 5G (2024), Android 15, over USB.
-- All 14/14 Meson tests passed after the last compact-header adjustment.
-- Confirmed LEDGER and STATE panels in a live scrcpy SDL window.
-- Captured and inspected the SHOT BMP: 638 x 962, including video and shell.
-- Auto and portrait requests achieved SYNCED during live tests.
-- Some forced landscape requests remained PENDING because Android did not
-  report a matching physical display rotation despite accepting the setting.
-- Restored the phone's original portrait lock (rotation 0, sensor rotation off).
+- Forced modes temporarily set Android's fixed-to-user-rotation policy
+  to `enabled`, then lock the requested rotation (0, 1, 2 or 3).
+- Auto sets fixed-to-user-rotation to `disabled`, releases the rotation
+  lock, and enables the `accelerometer_rotation=1` system setting.
+- The server snapshots the previous fixed policy, user rotation,
+  frozen/free state and accelerometer setting before the first request.
+- Normal shutdown restores those original device settings.
+- For ROMs without the fixed-policy getter on the `IWindowManager` binder
+  proxy, the server uses Android's own `cmd window` interface to query
+  and change that policy.
+- The client adopts Android's authoritative orientation on startup and
+  after external mode changes, while preserving pending local requests
+  until a matching device acknowledgement arrives.
 
-The functional UI currently uses simple SDL-drawn buttons; future cosmetics
-(illustrated hardware icons and automatic shape-fit after external forced
-window resizing) are not required for control-path correctness.
+## Verified Admin PC results — November 22, 2026
+
+- Motorola Moto G 5G (2024), Android 15, connected by USB ADB.
+- Portrait: display rotation 0, user rotation `lock 0`, UI `SYNCED`.
+- Landscape: rotation 1, user rotation `lock 1`, UI `SYNCED`.
+- Reverse Portrait: rotation 2, user rotation `lock 2`, UI `SYNCED`.
+- Reverse Landscape: rotation 3, user rotation `lock 3`, UI `SYNCED`.
+- Auto (Sensor): user rotation `free`, fixed policy `disabled`,
+  accelerometer setting 1, UI `SYNCED`.
+- Closing the session restored original `lock 0`, `default` and
+  `accelerometer_rotation=0`.
+- Restarting while locked Portrait produced `Portrait — SYNCED`.
+- Native client: all 14 Meson tests passed after startup-sync changes.
+- Windows client and Android server rebuilt successfully.
+
+See [rotation QA details](rotation-qa-20261122.md). Movement of the
+physical handset under Auto was not independently tested remotely.
