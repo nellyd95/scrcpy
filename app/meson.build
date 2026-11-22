@@ -31,6 +31,7 @@ src = [
     'src/packet_merger.c',
     'src/receiver.c',
     'src/recorder.c',
+    'src/rotation_sync.c',
     'src/scrcpy.c',
     'src/screen.c',
     'src/sdl_hints.c',
@@ -313,6 +314,10 @@ if get_option('buildtype') == 'debug'
         ['test_orientation', [
             'tests/test_orientation.c',
             'src/options.c',
+        ]],
+        ['test_rotation_sync', [
+            'tests/test_rotation_sync.c',
+            'src/rotation_sync.c',
         ]],
         ['test_strbuf', [
             'tests/test_strbuf.c',
