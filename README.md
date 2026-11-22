@@ -36,15 +36,21 @@ button ledger, device status, and rotation synchronization diagnostics.
   Portrait, and Reverse Landscape, and waits for a confirmed device rotation
   before considering a forced mode synchronized.
 - **Rotation unit tests:** added in `app/tests/test_rotation_sync.c` and
-  registered as the `test_rotation_sync` Meson test target. The target has not
-  yet been reported as executed on the Windows QA machine.
+  registered as the `test_rotation_sync` Meson test target. Verified passing
+  on the Windows QA machine (13/13 Meson tests passed overall).
 - **Design and protocol notes:** see
   [Windows phone-shell wrapper and SDL control integration](doc/phone-shell-wrapper.md).
 - **Native SDL control buttons, Android rotation-state protocol, Windows
   wrapper, and end-to-end device synchronization:** still in progress; do not
   treat them as implemented or verified yet.
-- **Windows build, smoke test, and Admin PC QA:** pending successful execution
-  against a fresh checkout of this branch.
+- **Windows build and CLI smoke test:** passed on Admin PC from a clean
+  `Contribute` checkout using MSYS2 UCRT64, GCC 16.2, SDL 3.4.20, Meson 1.12.1,
+  Ninja 1.13.2, and FFmpeg libraries. All 13 Meson tests passed; the resulting
+  `scrcpy.exe` started successfully for `--version` and `--help`, and ADB
+  recognized the USB-connected Moto G 5G. See [Windows QA results](doc/qa-windows-adminpc-20261122.md).
+- **End-to-end interactive device QA and finished phone-shell UI:** not yet
+  verified; the native buttons and full Android rotation-state protocol remain
+  unfinished.
 
 The rotation model is a preparatory component, not a complete user-facing
 feature. In particular, video dimensions alone cannot distinguish reverse
