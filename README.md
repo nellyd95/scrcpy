@@ -14,6 +14,44 @@ This application mirrors Android devices (video and audio) connected via USB or
 computer's keyboard and mouse. It does not require _root_ access or an app
 installed on the device. It works on _Linux_, _Windows_, and _macOS_.
 
+
+## Fork development: native controls and Windows phone-shell
+
+> [!NOTE]
+> This section describes experimental work maintained specifically in the
+> `nellyd95/scrcpy` fork on the `Contribute` branch. It is not part of an
+> official upstream scrcpy release. The upstream project and its release
+> downloads remain maintained at <https://github.com/Genymobile/scrcpy>.
+
+The fork is being extended toward a Windows desktop phone-shell that retains
+scrcpy's existing ADB connection, Android server, video pipeline, SDL renderer,
+and control protocol. The intended interface includes a compact desktop
+command bar, a phone frame with directly attached physical-style controls, a
+button ledger, device status, and rotation synchronization diagnostics.
+
+### Development status
+
+- **Rotation state model:** added in `app/src/rotation_sync.c` and
+  `app/src/rotation_sync.h`. It models Auto, Portrait, Landscape, Reverse
+  Portrait, and Reverse Landscape, and waits for a confirmed device rotation
+  before considering a forced mode synchronized.
+- **Rotation unit tests:** added in `app/tests/test_rotation_sync.c` and
+  registered as the `test_rotation_sync` Meson test target. The target has not
+  yet been reported as executed on the Windows QA machine.
+- **Design and protocol notes:** see
+  [Windows phone-shell wrapper and SDL control integration](doc/phone-shell-wrapper.md).
+- **Native SDL control buttons, Android rotation-state protocol, Windows
+  wrapper, and end-to-end device synchronization:** still in progress; do not
+  treat them as implemented or verified yet.
+- **Windows build, smoke test, and Admin PC QA:** pending successful execution
+  against a fresh checkout of this branch.
+
+The rotation model is a preparatory component, not a complete user-facing
+feature. In particular, video dimensions alone cannot distinguish reverse
+portrait from portrait or reverse landscape from landscape; the planned
+end-to-end implementation must report the actual Android display rotation over
+the device-to-client protocol.
+
 [![Linux](https://img.shields.io/badge/Linux-download-orange?style=for-the-badge&logo=linux)](doc/linux.md)&nbsp;
 [![Windows](https://img.shields.io/badge/Windows-download-blue?style=for-the-badge&logo=windows)](doc/windows.md)&nbsp;
 [![macOS](https://img.shields.io/badge/macOS-download-brightgreen?style=for-the-badge&logo=apple)](doc/macos.md)&nbsp;
