@@ -58,6 +58,11 @@ Android was rechecked and matched its initial configuration:
 - The C state machine now adopts initial and external confirmed modes
   and tracks outstanding local requests without prematurely acknowledging them.
 - The Windows executable rebuilt successfully; **14/14 Meson suites passed**.
+- External Android rotation-lock changes were tested while the device stayed
+  at physical rotation 0: switching `lock 0` to `free` and back to `lock 0`
+  produced distinct Android server events (`frozen=true`, `false`, `true`).
+  The server now polls both the rotation and frozen flag at 750 ms intervals
+  and sends only changes, complementing DisplayMonitor callbacks.
 - The Android server was compiled successfully and pushed through the
   existing USB-connected scrcpy QA session.
 - Source files and build artifacts remain on `D:` and `T:`; no wireless

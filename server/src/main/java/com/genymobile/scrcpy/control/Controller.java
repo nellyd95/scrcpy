@@ -87,6 +87,10 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
 
     private UhidManager uhidManager;
     private DisplayMonitor rotationMonitor;
+    private Thread rotationStatePollingThread;
+    private final Object rotationReportLock = new Object();
+    private int lastReportedRotation = -1;
+    private boolean lastReportedFrozen;
     // Snapshot the device policy before the FIRST explicit preset request.
     // A client disconnect must never leave the physical device forced into
     // a different orientation or persistently override the user's policy.
@@ -205,6 +209,15 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
             return;
         }
         boolean frozen = ServiceManager.getWindowManager().isRotationFrozen(id);
+        synchronized (rotationReportLock) {
+            if (lastReportedRotation == rotation && lastReportedFrozen == frozen) {
+                return; // Avoid duplicate device events and client render loops
+            }
+            lastReportedRotation = rotation;
+            lastReportedFrozen = frozen;
+        }
+        Ln.d("Rotation state changed: display=" + id
+                + " rotation=" + rotation + " frozen=" + frozen);
         sender.send(DeviceMessage.createRotationState(rotation, frozen));
     }
 
@@ -442,12 +455,33 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
                     }
                 });
                 reportRotationState(displayId);
+                // DisplayMonitor reports orientation/size changes, but some
+                // Android ROMs change only the freeze flag via Quick Settings
+                // without changing DisplayInfo. Poll both fields to catch
+                // external lock/Auto changes and deduplicate unchanged state.
+                rotationStatePollingThread = new Thread(() -> {
+                    try {
+                        while (!Thread.currentThread().isInterrupted()) {
+                            Thread.sleep(750);
+                            reportRotationState(displayId);
+                        }
+                    } catch (InterruptedException e) {
+                        // expected during shutdown
+                    } catch (Throwable e) {
+                        Ln.e("Rotation state monitor stopped unexpectedly", e);
+                    }
+                }, "rotation-state-poll");
+                rotationStatePollingThread.setDaemon(true);
+                rotationStatePollingThread.start();
             }
         }
     }
 
     @Override
     public void stop() {
+        if (rotationStatePollingThread != null) {
+            rotationStatePollingThread.interrupt();
+        }
         restoreRotationPolicy();
         if (rotationMonitor != null) {
             rotationMonitor.stopAndRelease();
@@ -466,6 +500,9 @@ public class Controller implements AsyncProcessor, VirtualDisplayListener {
 
     @Override
     public void join() throws InterruptedException {
+        if (rotationStatePollingThread != null) {
+            rotationStatePollingThread.join();
+        }
         if (thread != null) {
             thread.join();
         }
