@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <SDL3/SDL.h>
+#include "rotation_sync.h"
 
 #define SC_SHELL_TOP 46
 #define SC_SHELL_SIDE 42
@@ -25,6 +26,9 @@ enum sc_shell_button {
     SC_SHELL_BUTTON_COUNT,
     SC_SHELL_LEDGER = SC_SHELL_BUTTON_COUNT,
     SC_SHELL_FULLSCREEN,
+    SC_SHELL_SCREENSHOT,
+    SC_SHELL_OPTIONS,
+    SC_SHELL_RECORD_CLI,
 };
 
 struct sc_shell_layout {
@@ -32,6 +36,9 @@ struct sc_shell_layout {
     SDL_Rect buttons[SC_SHELL_BUTTON_COUNT];
     SDL_Rect ledger_toggle;
     SDL_Rect fullscreen_toggle;
+    SDL_Rect screenshot_button;
+    SDL_Rect options_button;
+    SDL_Rect record_cli_indicator;
     SDL_Rect footer;
     SDL_Rect header;
 };
@@ -53,6 +60,8 @@ void
 sc_shell_draw(SDL_Renderer *renderer, const struct sc_shell_layout *layout,
               float scale, enum sc_shell_button hover,
               enum sc_shell_button pressed, bool enabled, bool ledger,
-              const char *rotation_mode, const char *sync_status);
+              bool options_panel, const char *rotation_mode,
+              const char *sync_status,
+              const struct sc_rotation_sync_state *rotation);
 
 #endif

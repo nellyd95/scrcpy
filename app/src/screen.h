@@ -95,6 +95,8 @@ struct sc_screen {
     enum sc_shell_button shell_pressed;
     enum sc_shell_button shell_hovered;
     bool shell_ledger;
+    bool shell_options;
+    bool screenshot_pending;
     struct sc_rotation_sync_state rotation_sync;
 
     // only accessed from the thread calling sc_frame_sink_ops functions

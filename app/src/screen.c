@@ -1,8 +1,11 @@
 #include "screen.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_filesystem.h>
 
 #include "events.h"
 #include "icon.h"
@@ -384,7 +387,32 @@ end:
             ? "PENDING" : "WAITING";
         sc_shell_draw(renderer, &layout, density, screen->shell_hovered,
                       screen->shell_pressed, !screen->disconnected,
-                      screen->shell_ledger, mode, sync);
+                      screen->shell_ledger, screen->shell_options,
+                      mode, sync, &screen->rotation_sync);
+    }
+    if (screen->screenshot_pending) {
+        screen->screenshot_pending = false;
+        SDL_Surface *pixels = SDL_RenderReadPixels(renderer, NULL);
+        if (!pixels) {
+            LOGE("Could not capture screenshot pixels: %s", SDL_GetError());
+        } else {
+            const char *dir = getenv("SCRCPY_SCREENSHOT_DIR");
+            if (!dir || !*dir) {
+                dir = SDL_GetBasePath();
+            }
+            char path[1024];
+            SDL_snprintf(path, sizeof(path),
+                         "%s/scrcpy-shot-%llu-%llu.bmp", dir,
+                         (unsigned long long) time(NULL),
+                         (unsigned long long) SDL_GetTicks());
+            if (!SDL_CreateDirectory(dir) || !SDL_SaveBMP(pixels, path)) {
+                LOGE("Could not save screenshot '%s': %s", path,
+                     SDL_GetError());
+            } else {
+                LOGI("Screenshot saved: %s", path);
+            }
+            SDL_DestroySurface(pixels);
+        }
     }
     sc_sdl_render_present(renderer);
 }
@@ -581,6 +609,8 @@ sc_screen_init(struct sc_screen *screen,
     screen->shell_pressed = SC_SHELL_NONE;
     screen->shell_hovered = SC_SHELL_NONE;
     screen->shell_ledger = false;
+    screen->shell_options = false;
+    screen->screenshot_pending = false;
     sc_rotation_sync_init(&screen->rotation_sync);
 
     screen->video = params->video;
@@ -1267,7 +1297,19 @@ sc_screen_handle_shell_pointer(struct sc_screen *screen, int32_t x, int32_t y,
         if (pressed != SC_SHELL_NONE && pressed == hit) {
             if (hit == SC_SHELL_LEDGER) {
                 screen->shell_ledger = !screen->shell_ledger;
+                screen->shell_options = false;
                 sc_screen_render(screen, true);
+                return true;
+            }
+            if (hit == SC_SHELL_OPTIONS) {
+                screen->shell_options = !screen->shell_options;
+                screen->shell_ledger = screen->shell_options;
+                sc_screen_render(screen, true);
+                return true;
+            }
+            if (hit == SC_SHELL_SCREENSHOT) {
+                screen->screenshot_pending = true;
+                sc_screen_render(screen, false);
                 return true;
             }
             if (hit == SC_SHELL_FULLSCREEN) {

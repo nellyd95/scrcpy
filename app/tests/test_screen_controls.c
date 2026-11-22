@@ -33,6 +33,21 @@ verify(int width, int height, bool ledger) {
             assert(!overlap(b, l.buttons[j]));
         }
     }
+    if (width >= 350) {
+        assert(sc_shell_hit_test(&l, l.screenshot_button.x + 3,
+                                 l.screenshot_button.y + 3)
+               == SC_SHELL_SCREENSHOT);
+        assert(sc_shell_hit_test(&l, l.options_button.x + 3,
+                                 l.options_button.y + 3)
+               == SC_SHELL_OPTIONS);
+        if (width >= 580) {
+            assert(sc_shell_hit_test(&l, l.record_cli_indicator.x + 3,
+                                     l.record_cli_indicator.y + 3)
+                   == SC_SHELL_NONE);
+        } else {
+            assert(l.record_cli_indicator.w == 0);
+        }
+    }
     assert(sc_shell_hit_test(&l, l.ledger_toggle.x + 3,
                              l.ledger_toggle.y + 3) == SC_SHELL_LEDGER);
     assert(sc_shell_hit_test(&l, l.fullscreen_toggle.x + 3,
@@ -45,6 +60,8 @@ main(int argc, char *argv[]) {
     (void)argv;
     verify(360, 720, false);
     verify(360, 720, true);
+    verify(430, 936, false);
+    verify(430, 936, true);
     verify(600, 900, false);
     verify(800, 500, false);
     verify(1280, 900, true);

@@ -62,6 +62,21 @@ sc_shell_compute(int32_t width, int32_t height, bool ledger,
     }
     l->fullscreen_toggle = (SDL_Rect) {maxi(0, width - 67), 9, 58, maxi(10, top - 17)};
     l->ledger_toggle = (SDL_Rect) {maxi(0, width - 140), 9, 67, maxi(10, top - 17)};
+    if (width >= 580) {
+        l->screenshot_button = (SDL_Rect) {width - 373, 9, 65, maxi(10, top - 17)};
+        l->record_cli_indicator = (SDL_Rect) {width - 301, 9, 66, maxi(10, top - 17)};
+        l->options_button = (SDL_Rect) {width - 222, 9, 68, maxi(10, top - 17)};
+    } else if (width >= 350) {
+        // Keep SHOT and STATE accessible on the narrow, native phone-size shell.
+        // Only the read-only REC CLI indicator becomes hidden in this layout.
+        l->screenshot_button = (SDL_Rect) {width - 288, 9, 65, maxi(10, top - 17)};
+        l->record_cli_indicator = (SDL_Rect) {0, 0, 0, 0};
+        l->options_button = (SDL_Rect) {width - 216, 9, 68, maxi(10, top - 17)};
+    } else {
+        l->screenshot_button = (SDL_Rect) {0, 0, 0, 0};
+        l->record_cli_indicator = (SDL_Rect) {0, 0, 0, 0};
+        l->options_button = (SDL_Rect) {0, 0, 0, 0};
+    }
 }
 
 enum sc_shell_button
@@ -71,6 +86,10 @@ sc_shell_hit_test(const struct sc_shell_layout *l, int32_t x, int32_t y) {
             return (enum sc_shell_button) i;
         }
     }
+    if (contains(&l->screenshot_button, x, y)) return SC_SHELL_SCREENSHOT;
+    if (contains(&l->options_button, x, y)) return SC_SHELL_OPTIONS;
+    // Recording through --record is supported but has no runtime toggle.
+    // Never treat the disabled REC indicator as a working clickable button.
     if (contains(&l->ledger_toggle, x, y)) return SC_SHELL_LEDGER;
     if (contains(&l->fullscreen_toggle, x, y)) return SC_SHELL_FULLSCREEN;
     return SC_SHELL_NONE;
@@ -85,7 +104,7 @@ const char *
 sc_shell_button_label(enum sc_shell_button button) {
     static const char *const labels[SC_SHELL_BUTTON_COUNT] = {
         "PWR", "VOL+", "VOL-", "MUTE", "BACK", "HOME", "APPS",
-        "NOTIF", "SET", "ROTATE"
+        "BELL", "SET", "ROTATE"
     };
     return button >= 0 && button < SC_SHELL_BUTTON_COUNT
          ? labels[button] : "";
@@ -112,6 +131,9 @@ draw_text(SDL_Renderer *r, float x, float y, const char *text) {
 static void
 button(SDL_Renderer *r, SDL_Rect rect, float scale, const char *label,
        bool selected, bool pressed, bool enabled) {
+    if (rect.w <= 0 || rect.h <= 0) {
+        return;
+    }
     SDL_FRect area = scaled(rect, scale);
     if (!enabled) {
         fill(r, area, 44, 45, 52);
@@ -134,7 +156,9 @@ void
 sc_shell_draw(SDL_Renderer *r, const struct sc_shell_layout *l,
               float scale, enum sc_shell_button hover,
               enum sc_shell_button pressed, bool enabled, bool ledger,
-              const char *rotation_mode, const char *sync_status) {
+              bool options_panel, const char *rotation_mode,
+              const char *sync_status,
+              const struct sc_rotation_sync_state *rotation) {
     SDL_FRect header = scaled(l->header, scale);
     SDL_FRect footer = scaled(l->footer, scale);
     fill(r, header, 15, 24, 38);
@@ -149,8 +173,18 @@ sc_shell_draw(SDL_Renderer *r, const struct sc_shell_layout *l,
     SDL_SetRenderDrawColor(r, 66, 91, 113, 255);
     SDL_RenderRect(r, &edge);
 
-    draw_text(r, 12 * scale, 10 * scale, "SCRCPY  /  PHONE SHELL");
-    draw_text(r, 12 * scale, 27 * scale, enabled ? "USB CONTROL ACTIVE" : "CONTROL DISABLED");
+    bool compact = l->header.w < 580;
+    draw_text(r, 12 * scale, 10 * scale,
+              compact ? "SCRCPY" : "SCRCPY  /  PHONE SHELL");
+    draw_text(r, 12 * scale, 27 * scale,
+              compact ? (enabled ? "CONNECTED" : "OFFLINE")
+                      : (enabled ? "DEVICE CONTROL ACTIVE" : "CONTROL DISABLED"));
+    button(r, l->screenshot_button, scale, "SHOT",
+           hover == SC_SHELL_SCREENSHOT, pressed == SC_SHELL_SCREENSHOT, enabled);
+    button(r, l->record_cli_indicator, scale, "REC CLI",
+           false, false, false);
+    button(r, l->options_button, scale, "STATE",
+           hover == SC_SHELL_OPTIONS, pressed == SC_SHELL_OPTIONS, enabled);
     button(r, l->ledger_toggle, scale, "LEDGER", hover == SC_SHELL_LEDGER,
            pressed == SC_SHELL_LEDGER, true);
     button(r, l->fullscreen_toggle, scale, "FULL", hover == SC_SHELL_FULLSCREEN,
@@ -170,13 +204,41 @@ sc_shell_draw(SDL_Renderer *r, const struct sc_shell_layout *l,
 
     if (ledger) {
         int y = l->footer.y + 26;
-        draw_text(r, 12 * scale, y * scale,
-                  "PHYSICAL BUTTONS: PWR / VOL+ / VOL- / MUTE");
-        draw_text(r, 12 * scale, (y + 15) * scale,
-                  "DEVICE: BACK / HOME / APPS / NOTIF / SET / ROTATE");
-        draw_text(r, 12 * scale, (y + 30) * scale,
-                  "HIDDEN / INACTIVE: CAMERA ZOOM, TORCH, GAMEPAD");
-        draw_text(r, 12 * scale, (y + 45) * scale,
-                  "HIDDEN / INACTIVE: SCREEN RECORD (CLI ONLY)");
+        if (options_panel && rotation) {
+            char detail[160];
+            SDL_snprintf(detail, sizeof(detail),
+                         "REQUESTED: %s", rotation_mode);
+            draw_text(r, 12 * scale, y * scale, detail);
+            if (rotation->has_device_rotation) {
+                SDL_snprintf(detail, sizeof(detail),
+                             "ANDROID ROTATION: %u (x90 degrees) / FROZEN: %s",
+                             rotation->confirmed_device_rotation,
+                             rotation->device_rotation_frozen ? "YES" : "NO");
+            } else {
+                SDL_snprintf(detail, sizeof(detail), "ANDROID ROTATION: WAITING");
+            }
+            draw_text(r, 12 * scale, (y + 15) * scale, detail);
+            SDL_snprintf(detail, sizeof(detail),
+                         "SDL DEVICE-STATE TRACKER: %u (x90 degrees)",
+                         rotation->current_sdl_rotation);
+            draw_text(r, 12 * scale, (y + 30) * scale, detail);
+            draw_text(r, 12 * scale, (y + 45) * scale,
+                      "SOURCE: ANDROID DISPLAY / ROTATION ACK");
+            SDL_snprintf(detail, sizeof(detail),
+                         "SYNCHRONIZATION: %s (CONFIRMATION REQUIRED)",
+                         sync_status);
+            draw_text(r, 12 * scale, (y + 60) * scale, detail);
+        } else {
+            draw_text(r, 12 * scale, y * scale,
+                      "PHYSICAL BUTTONS: PWR / VOL+ / VOL- / MUTE");
+            draw_text(r, 12 * scale, (y + 15) * scale,
+                      "DEVICE: BACK / HOME / APPS / NOTIF / SET / ROTATE");
+            draw_text(r, 12 * scale, (y + 30) * scale,
+                      "HIDDEN: CAMERA ZOOM, TORCH, GAMEPAD");
+            draw_text(r, 12 * scale, (y + 45) * scale,
+                      "RECORDING: CLI --record=PATH (RUNTIME TOGGLE INACTIVE)");
+            draw_text(r, 12 * scale, (y + 60) * scale,
+                      "SCREENSHOT: SHOT BUTTON; STATE: DIAGNOSTICS PANEL");
+        }
     }
 }
