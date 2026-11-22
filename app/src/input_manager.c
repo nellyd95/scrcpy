@@ -54,7 +54,7 @@ sc_input_manager_init(struct sc_input_manager *im,
 static void
 send_keycode(struct sc_input_manager *im, enum android_keycode keycode,
              enum sc_action action, const char *name) {
-    assert(im->controller && im->kp && !im->camera);
+    assert(im->controller && !im->camera);
 
     // send DOWN event
     struct sc_control_msg msg;
@@ -277,6 +277,39 @@ rotate_device(struct sc_input_manager *im) {
     if (!sc_controller_push_msg(im->controller, &msg)) {
         LOGW("Could not request device rotation");
     }
+}
+
+void
+sc_input_manager_press_shell_button(struct sc_input_manager *im,
+                                    enum sc_shell_button button) {
+    if (!im->controller || im->camera || im->disconnected) {
+        return;
+    }
+    if (button == SC_SHELL_NOTIFICATIONS) {
+        expand_notification_panel(im);
+        return;
+    }
+    if (button == SC_SHELL_SETTINGS) {
+        expand_settings_panel(im);
+        return;
+    }
+    if (button == SC_SHELL_ROTATION) {
+        rotate_device(im);
+        return;
+    }
+    enum android_keycode code;
+    switch (button) {
+        case SC_SHELL_POWER: code = AKEYCODE_POWER; break;
+        case SC_SHELL_VOLUME_UP: code = AKEYCODE_VOLUME_UP; break;
+        case SC_SHELL_VOLUME_DOWN: code = AKEYCODE_VOLUME_DOWN; break;
+        case SC_SHELL_MUTE: code = AKEYCODE_VOLUME_MUTE; break;
+        case SC_SHELL_BACK: code = AKEYCODE_BACK; break;
+        case SC_SHELL_HOME: code = AKEYCODE_HOME; break;
+        case SC_SHELL_APPS: code = AKEYCODE_APP_SWITCH; break;
+        default: return;
+    }
+    send_keycode(im, code, SC_ACTION_DOWN, sc_shell_button_label(button));
+    send_keycode(im, code, SC_ACTION_UP, sc_shell_button_label(button));
 }
 
 static void

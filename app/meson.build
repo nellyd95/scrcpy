@@ -34,6 +34,7 @@ src = [
     'src/rotation_sync.c',
     'src/scrcpy.c',
     'src/screen.c',
+    'src/screen_controls.c',
     'src/sdl_hints.c',
     'src/server.c',
     'src/texture.c',
@@ -318,6 +319,10 @@ if get_option('buildtype') == 'debug'
         ['test_rotation_sync', [
             'tests/test_rotation_sync.c',
             'src/rotation_sync.c',
+        ]],
+        ['test_screen_controls', [
+            'tests/test_screen_controls.c',
+            'src/screen_controls.c',
         ]],
         ['test_strbuf', [
             'tests/test_strbuf.c',

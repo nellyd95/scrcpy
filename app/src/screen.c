@@ -7,6 +7,7 @@
 #include "events.h"
 #include "icon.h"
 #include "options.h"
+#include "screen_controls.h"
 #include "util/log.h"
 #include "util/sdl.h"
 
@@ -14,12 +15,30 @@
 
 #define DOWNCAST(SINK) container_of(SINK, struct sc_screen, frame_sink)
 
+static bool
+sc_screen_has_shell(struct sc_screen *screen) {
+    return screen->video && screen->controller && !screen->camera
+        && !(screen->im.mp && screen->im.mp->relative_mode);
+}
+
+static void
+sc_screen_shell_layout(struct sc_screen *screen, struct sc_shell_layout *layout) {
+    struct sc_size size = sc_sdl_get_window_size(screen->window);
+    sc_shell_compute(size.width, size.height, screen->shell_ledger, layout);
+}
+
+
 static void
 set_aspect_ratio(struct sc_screen *screen, struct sc_size content_size) {
     assert(content_size.width && content_size.height);
 
     if (screen->window_aspect_ratio_lock) {
         float ar = (float) content_size.width / content_size.height;
+        if (sc_screen_has_shell(screen)) {
+            ar = (float) (content_size.width + 2 * SC_SHELL_SIDE)
+               / (content_size.height + SC_SHELL_TOP + SC_SHELL_BOTTOM
+                  + (screen->shell_ledger ? SC_SHELL_LEDGER_EXTRA : 0));
+        }
         bool ok = SDL_SetWindowAspectRatio(screen->window, ar, ar);
         if (!ok) {
             LOGW("Could not set window aspect ratio: %s", SDL_GetError());
@@ -247,9 +266,20 @@ compute_content_rect(struct sc_size window_size, struct sc_size content_size,
 static void
 sc_screen_update_content_rect(struct sc_screen *screen) {
     struct sc_size window_size = sc_sdl_get_window_size(screen->window);
+    struct sc_shell_layout layout;
+    if (sc_screen_has_shell(screen)) {
+        sc_shell_compute(window_size.width, window_size.height,
+                         screen->shell_ledger, &layout);
+        window_size.width = layout.viewport.w;
+        window_size.height = layout.viewport.h;
+    }
     compute_content_rect(window_size, screen->content_size,
                          screen->is_icon_active, screen->render_fit,
                          &screen->rect);
+    if (sc_screen_has_shell(screen)) {
+        screen->rect.x += layout.viewport.x;
+        screen->rect.y += layout.viewport.y;
+    }
 }
 
 // render the texture to the renderer
@@ -340,6 +370,22 @@ sc_screen_render(struct sc_screen *screen, bool update_content_rect) {
     }
 
 end:
+    if (sc_screen_has_shell(screen)) {
+        struct sc_shell_layout layout;
+        sc_screen_shell_layout(screen, &layout);
+        float density = SDL_GetWindowPixelDensity(screen->window);
+        if (density <= 0) {
+            density = 1;
+        }
+        const char *mode = sc_rotation_mode_get_name(
+            screen->rotation_sync.requested_mode);
+        const char *sync = screen->rotation_sync.status == SC_ROTATION_SYNCED
+            ? "SYNCED" : screen->rotation_sync.status == SC_ROTATION_SYNC_PENDING
+            ? "PENDING" : "WAITING";
+        sc_shell_draw(renderer, &layout, density, screen->shell_hovered,
+                      screen->shell_pressed, !screen->disconnected,
+                      screen->shell_ledger, mode, sync);
+    }
     sc_sdl_render_present(renderer);
 }
 
@@ -348,6 +394,12 @@ sc_screen_request_resize_display(struct sc_screen *screen, uint16_t width,
                                  uint16_t height) {
     assert(screen->flex_display);
     assert(!screen->camera);
+    if (sc_screen_has_shell(screen)) {
+        struct sc_shell_layout layout;
+        sc_shell_compute(width, height, screen->shell_ledger, &layout);
+        width = layout.viewport.w;
+        height = layout.viewport.h;
+    }
     if (sc_orientation_is_swap(screen->orientation)) {
         uint16_t tmp = width;
         width = height;
@@ -526,6 +578,10 @@ sc_screen_init(struct sc_screen *screen,
     screen->orientation = SC_ORIENTATION_0;
     screen->disconnected = false;
     screen->disconnect_started = false;
+    screen->shell_pressed = SC_SHELL_NONE;
+    screen->shell_hovered = SC_SHELL_NONE;
+    screen->shell_ledger = false;
+    sc_rotation_sync_init(&screen->rotation_sync);
 
     screen->video = params->video;
     screen->camera = params->camera;
@@ -783,6 +839,16 @@ sc_screen_show_initial_window(struct sc_screen *screen) {
     struct sc_size window_size =
         get_initial_optimal_size(screen->content_size, screen->req.width,
                                                        screen->req.height);
+    if (sc_screen_has_shell(screen)) {
+        struct sc_size bounds;
+        if (get_preferred_display_bounds(&bounds)) {
+            uint32_t with_rails = window_size.width + 2 * SC_SHELL_SIDE;
+            uint32_t with_bars = window_size.height + SC_SHELL_TOP
+                               + SC_SHELL_BOTTOM;
+            window_size.width = MIN(with_rails, bounds.width);
+            window_size.height = MIN(with_bars, bounds.height);
+        }
+    }
 
     if (screen->flex_display
             && window_size.width == screen->content_size.width
@@ -975,7 +1041,13 @@ sc_screen_apply_frame(struct sc_screen *screen, bool can_resize) {
             get_oriented_size(new_frame_size, screen->orientation);
 
         if (screen->flex_display) {
-            sc_screen_track_resize(screen, new_content_size);
+            struct sc_size tracked = new_content_size;
+            if (sc_screen_has_shell(screen)) {
+                tracked.width += 2 * SC_SHELL_SIDE;
+                tracked.height += SC_SHELL_TOP + SC_SHELL_BOTTOM
+                                + (screen->shell_ledger ? SC_SHELL_LEDGER_EXTRA : 0);
+            }
+            sc_screen_track_resize(screen, tracked);
         }
 
         set_content_size(screen, new_content_size, can_resize);
@@ -1168,6 +1240,101 @@ sc_disconnect_on_timeout(struct sc_disconnect *d, void *userdata) {
     (void) ok; // ignore failure
 }
 
+static bool
+sc_screen_handle_shell_pointer(struct sc_screen *screen, int32_t x, int32_t y,
+                               bool down, bool up) {
+    if (!sc_screen_has_shell(screen) || !screen->window_shown) {
+        return false;
+    }
+    struct sc_shell_layout layout;
+    sc_screen_shell_layout(screen, &layout);
+    enum sc_shell_button hit = sc_shell_hit_test(&layout, x, y);
+    bool in_video = sc_shell_is_viewport(&layout, x, y);
+
+    if (down) {
+        if (in_video) {
+            return false;
+        }
+        screen->shell_pressed = hit;
+        screen->shell_hovered = hit;
+        sc_screen_render(screen, false);
+        return true;
+    }
+    if (up) {
+        enum sc_shell_button pressed = screen->shell_pressed;
+        screen->shell_pressed = SC_SHELL_NONE;
+        screen->shell_hovered = hit;
+        if (pressed != SC_SHELL_NONE && pressed == hit) {
+            if (hit == SC_SHELL_LEDGER) {
+                screen->shell_ledger = !screen->shell_ledger;
+                sc_screen_render(screen, true);
+                return true;
+            }
+            if (hit == SC_SHELL_FULLSCREEN) {
+                sc_screen_toggle_fullscreen(screen);
+            } else if (!screen->disconnected) {
+                sc_input_manager_press_shell_button(&screen->im, hit);
+            }
+        }
+        if (!in_video || pressed != SC_SHELL_NONE) {
+            sc_screen_render(screen, false);
+            return true;
+        }
+        return false;
+    }
+    if (!in_video || screen->shell_pressed != SC_SHELL_NONE) {
+        if (screen->shell_hovered != hit) {
+            screen->shell_hovered = hit;
+            sc_screen_render(screen, false);
+        }
+        return true;
+    }
+    if (screen->shell_hovered != SC_SHELL_NONE) {
+        screen->shell_hovered = SC_SHELL_NONE;
+        sc_screen_render(screen, false);
+    }
+    return false;
+}
+
+static bool
+sc_screen_handle_shell_event(struct sc_screen *screen, const SDL_Event *event) {
+    if (!sc_screen_has_shell(screen)) {
+        return false;
+    }
+    switch (event->type) {
+        case SDL_EVENT_MOUSE_MOTION:
+            if (event->motion.which == SDL_TOUCH_MOUSEID) return false;
+            return sc_screen_handle_shell_pointer(
+                screen, (int32_t)event->motion.x, (int32_t)event->motion.y,
+                false, false);
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (event->button.which == SDL_TOUCH_MOUSEID) return false;
+            if (event->button.button != SDL_BUTTON_LEFT) {
+                struct sc_shell_layout l;
+                sc_screen_shell_layout(screen, &l);
+                return !sc_shell_is_viewport(&l, (int32_t)event->button.x,
+                                             (int32_t)event->button.y);
+            }
+            return sc_screen_handle_shell_pointer(
+                screen, (int32_t)event->button.x, (int32_t)event->button.y,
+                event->type == SDL_EVENT_MOUSE_BUTTON_DOWN,
+                event->type == SDL_EVENT_MOUSE_BUTTON_UP);
+        case SDL_EVENT_FINGER_MOTION:
+        case SDL_EVENT_FINGER_DOWN:
+        case SDL_EVENT_FINGER_UP: {
+            struct sc_size size = sc_sdl_get_window_size(screen->window);
+            int32_t x = (int32_t)(event->tfinger.x * size.width);
+            int32_t y = (int32_t)(event->tfinger.y * size.height);
+            return sc_screen_handle_shell_pointer(screen, x, y,
+                event->type == SDL_EVENT_FINGER_DOWN,
+                event->type == SDL_EVENT_FINGER_UP);
+        }
+        default:
+            return false;
+    }
+}
+
 void
 sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event) {
     switch (event->type) {
@@ -1227,6 +1394,8 @@ sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event) {
         case SC_EVENT_DEVICE_DISCONNECTED:
             assert(!screen->disconnected);
             screen->disconnected = true;
+            screen->shell_pressed = SC_SHELL_NONE;
+            screen->shell_hovered = SC_SHELL_NONE;
             if (!screen->window_shown) {
                 // No window open
                 return;
@@ -1249,6 +1418,10 @@ sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event) {
             }
 
             return;
+    }
+
+    if (sc_screen_handle_shell_event(screen, event)) {
+        return;
     }
 
     if (sc_screen_is_relative_mode(screen)

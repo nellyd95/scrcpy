@@ -9,6 +9,7 @@
 #include <SDL3/SDL_keycode.h>
 
 #include "controller.h"
+#include "screen_controls.h"
 #include "file_pusher.h"
 #include "options.h"
 #include "trait/gamepad_processor.h"
@@ -72,5 +73,9 @@ sc_input_manager_init(struct sc_input_manager *im,
 void
 sc_input_manager_handle_event(struct sc_input_manager *im,
                               const SDL_Event *event);
+
+void
+sc_input_manager_press_shell_button(struct sc_input_manager *im,
+                                    enum sc_shell_button button);
 
 #endif

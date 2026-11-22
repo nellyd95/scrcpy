@@ -11,6 +11,8 @@
 #include <libavutil/pixfmt.h>
 
 #include "controller.h"
+#include "screen_controls.h"
+#include "rotation_sync.h"
 #include "coords.h"
 #include "disconnect.h"
 #include "fps_counter.h"
@@ -89,6 +91,11 @@ struct sc_screen {
     // rectangle of the content (excluding black borders)
     struct SDL_FRect rect;
     bool window_shown;
+
+    enum sc_shell_button shell_pressed;
+    enum sc_shell_button shell_hovered;
+    bool shell_ledger;
+    struct sc_rotation_sync_state rotation_sync;
 
     // only accessed from the thread calling sc_frame_sink_ops functions
     struct sc_stream_session current_session;
